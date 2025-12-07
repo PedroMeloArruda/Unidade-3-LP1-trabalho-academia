@@ -1,271 +1,400 @@
 #include <iostream>
 #include <vector>
-#include <string>
 #include <fstream>
+#include <sstream>
+#include <ctime>
 using namespace std;
 
-// =================== CLASSE BASE ===================
+// classe base "exercicio"
+// representa qualquer tipo de exercício (cardio ou força)
+//id, nome, status e metodos virtuais
 class Exercicio {
 protected:
     int id;
     string nome;
+    bool ativo;
+    static int proximoId; // controla a geração de ids
 
 public:
-    Exercicio() {}
-    Exercicio(int id, const string& nome) : id(id), nome(nome) {}
+    // construtor usado para novos cadastros
+    // gera id automaticamente
+    Exercicio(string n) {
+        nome = n;
+        ativo = true;
+        id = proximoId++;
+    }
+
+    // construtor usado ao ler do arquivo
+    // recebe o id fixo que já existia
+    Exercicio(int idExistente, string n, bool status) {
+        id = idExistente;
+        nome = n;
+        ativo = status;
+
+        // ajusta o contador de ids global
+        if (idExistente >= proximoId)
+            proximoId = idExistente + 1;
+    }
+
     virtual ~Exercicio() {}
 
-    int getId() const { return id; }
-    string getNome() const { return nome; }
+    int getId() { return id; }
+    string getNome() { return nome; }
+    bool isAtivo() { return ativo; }
+    void desativar() { ativo = false; }
 
-    virtual double calcularCalorias() const = 0;
-    virtual double calcularTempo() const = 0;
-
-    virtual void salvar(ofstream& arq) const = 0;
+    // métodos polimórficos obrigatórios
+    virtual double calcularTempo() = 0;      // calcula tempo total
+    virtual double calcularCalorias() = 0;   // calcula calorias gastas
+    virtual int getTipo() = 0;               // retorna tipo (1 cardio / 2 força)
+    virtual void exibirDetalhes() = 0;       // mostra informações do exercício
+    virtual string serializar() = 0;         // converte em linha para salvar em arquivo
 };
+int Exercicio::proximoId = 1;
 
-// =================== CARDIO ===================
+// classe cardio
+// representa exercícios aeróbicos
+// calcula tempo e calorias com base em duração e cal/min
 class Cardio : public Exercicio {
-    double distancia;
-    double velocidade;
+private:
+    int duracao;
+    double calPorMin;
 
 public:
-    Cardio(int id, const string& nome, double distancia, double velocidade)
-        : Exercicio(id, nome), distancia(distancia), velocidade(velocidade) {}
+    // construtor normal
+    Cardio(string n, int d, double cpm)
+        : Exercicio(n), duracao(d), calPorMin(cpm) {}
 
-    double calcularCalorias() const override {
-        return distancia * 5.0;  // simplificado
+    // construtor ao ler do arquivo
+    Cardio(int idExist, string n, bool st, int d, double cpm)
+        : Exercicio(idExist, n, st), duracao(d), calPorMin(cpm) {}
+
+    // retorna tempo total (igual à duração)
+    double calcularTempo() override {
+        return duracao;
     }
 
-    double calcularTempo() const override {
-        return distancia / velocidade;
+    // calcula calorias = duração * cal/min
+    double calcularCalorias() override {
+        return duracao * calPorMin;
     }
 
-    void salvar(ofstream& arq) const override {
-        arq << "CARDIO;" << id << ";" << nome << ";" 
-            << distancia << ";" << velocidade << "\n";
+    int getTipo() override { return 1; }
+
+    // exibe dados do exercício
+    void exibirDetalhes() override {
+        cout << "[cardio] id=" << id
+             << " nome=" << nome
+             << " duracao=" << duracao
+             << " cal/min=" << calPorMin
+             << " ativo=" << ativo << endl;
+    }
+
+    // gera linha para salvar no arquivo exercicios.txt
+    string serializar() override {
+        return "1;" + to_string(id) + ";" + nome + ";" +
+               to_string(duracao) + ";" + to_string(calPorMin) + ";" +
+               to_string(ativo);
     }
 };
 
-// =================== FORÇA ===================
+// classe forca
+// representa exercícios de musculação
+// calcula tempo com base em reps/séries/descanso
+// calcula calorias pelo volume total levantado
 class Forca : public Exercicio {
-    int repeticoes;
+private:
     double carga;
+    int series;
+    int repeticoes;
+    int descanso;
 
 public:
-    Forca(int id, const string& nome, int repeticoes, double carga)
-        : Exercicio(id, nome), repeticoes(repeticoes), carga(carga) {}
+    // construtor normal
+    Forca(string n, double c, int s, int r, int d)
+        : Exercicio(n), carga(c), series(s), repeticoes(r), descanso(d) {}
 
-    double calcularCalorias() const override {
-        return repeticoes * carga * 0.1;
+    // construtor ao ler do arquivo
+    Forca(int idExist, string n, bool st, double c, int s, int r, int d)
+        : Exercicio(idExist, n, st), carga(c), series(s), repeticoes(r), descanso(d) {}
+
+    // calcula tempo = (reps * séries * 3s + descanso total) convertido para minutos
+    double calcularTempo() override {
+        double tempoRep = series * repeticoes * 3;
+        double tempoDesc = series * descanso;
+        return (tempoRep + tempoDesc) / 60.0;
     }
 
-    double calcularTempo() const override {
-        return repeticoes * 2; // simplificado
+    // calcula calorias usando fórmula pedida
+    double calcularCalorias() override {
+        return series * repeticoes * carga * 0.15;
     }
 
-    void salvar(ofstream& arq) const override {
-        arq << "FORCA;" << id << ";" << nome << ";" 
-            << repeticoes << ";" << carga << "\n";
+    int getTipo() override { return 2; }
+
+    // exibe informações completas
+    void exibirDetalhes() override {
+        cout << "[forca] id=" << id
+             << " nome=" << nome
+             << " carga=" << carga
+             << " series=" << series
+             << " reps=" << repeticoes
+             << " descanso=" << descanso
+             << " ativo=" << ativo << endl;
+    }
+
+    // serializa para salvar no arquivo
+    string serializar() override {
+        return "2;" + to_string(id) + ";" + nome + ";" +
+               to_string(carga) + ";" + to_string(series) + ";" +
+               to_string(repeticoes) + ";" + to_string(descanso) + ";" +
+               to_string(ativo);
     }
 };
 
-// =================== FICHA ===================
-struct Ficha {
-    int idFicha;
+// classe ficha
+// representa um treino composto por vários exercícios
+// calcula tempo total e calorias da soma de todos
+class Ficha {
+public:
+    int id;
     string nome;
-    vector<int> idsExercicios;
+    vector<Exercicio*> exercicios;
 
-    void salvar(ofstream& arq) const {
-        arq << idFicha << ";" << nome << ";";
-        for (int i = 0; i < (int)idsExercicios.size(); i++) {
-            arq << idsExercicios[i];
-            if (i < (int)idsExercicios.size() - 1) arq << ",";
-        }
-        arq << "\n";
+    Ficha(int i, string n) : id(i), nome(n) {}
+
+    // soma o tempo de todos os exercícios
+    double tempoTotal() {
+        double soma = 0;
+        for (auto e : exercicios) soma += e->calcularTempo();
+        return soma;
+    }
+
+    // soma as calorias de todos os exercícios
+    double caloriasTotal() {
+        double soma = 0;
+        for (auto e : exercicios) soma += e->calcularCalorias();
+        return soma;
+    }
+
+    // gera linha para salvar em fichas.txt
+    string serializar() {
+        string linha = to_string(id) + ";" + nome + ";" + to_string(exercicios.size());
+        for (auto e : exercicios) linha += ";" + to_string(e->getId());
+        return linha;
     }
 };
 
-// ================= HISTÓRICO ==================
-struct HistoricoItem {
-    string nomeAluno;
-    int idFicha;
-    string data;
-
-    void salvar(ofstream& arq) const {
-        arq << nomeAluno << ";" << idFicha << ";" << data << "\n";
-    }
-};
-
-// =============================================================
-//                       ARMAZENAMENTO
-// =============================================================
-vector<Cardio> listaCardio;
-vector<Forca> listaForca;
-vector<Ficha> listaFichas;
-vector<HistoricoItem> historico;
-
-int proximoId = 1;
-int proximoIdFicha = 1;
-
-// procura exercício por id
-Exercicio* buscarExercicio(int id) {
-    for (auto& c : listaCardio) if (c.getId() == id) return &c;
-    for (auto& f : listaForca) if (f.getId() == id) return &f;
-    return nullptr;
+// função que retorna a data/hora atual formatada
+// usada para registrar o histórico
+string agora() {
+    time_t t = time(nullptr);
+    tm* dt = localtime(&t);
+    char buf[50];
+    strftime(buf, 50, "%d/%m/%Y %H:%M:%S", dt);
+    return string(buf);
 }
 
-// =============================================================
-//                         FUNÇÕES
-// =============================================================
-void cadastrarExercicio() {
-    int tipo;
-    cout << "1 - Cardio\n2 - Forca\n> ";
-    cin >> tipo;
-
-    string nome;
-    cout << "Nome: ";
-    cin.ignore();
-    getline(cin, nome);
-
-    if (tipo == 1) {
-        double dist, vel;
-        cout << "Distancia (km): ";
-        cin >> dist;
-        cout << "Velocidade (km/h): ";
-        cin >> vel;
-
-        listaCardio.emplace_back(proximoId++, nome, dist, vel);
-    } else {
-        int rep;
-        double carga;
-        cout << "Repeticoes: ";
-        cin >> rep;
-        cout << "Carga (kg): ";
-        cin >> carga;
-
-        listaForca.emplace_back(proximoId++, nome, rep, carga);
-    }
-
-    cout << "Exercicio cadastrado!\n";
-}
-
-void criarFicha() {
-    Ficha f;
-    f.idFicha = proximoIdFicha++;
-
-    cout << "Nome da ficha: ";
-    cin.ignore();
-    getline(cin, f.nome);
-
-    cout << "Insira IDs dos exercícios (0 para encerrar):\n";
-
-    while (true) {
-        cout << "> ";
-        int id;
-        cin >> id;
-        if (id == 0) break;
-        if (buscarExercicio(id)) {
-            f.idsExercicios.push_back(id);
-        } else {
-            cout << "ID inválido!\n";
-        }
-    }
-
-    listaFichas.push_back(f);
-    cout << "Ficha criada com sucesso!\n";
-}
-
-void registrarTreino() {
-    HistoricoItem h;
-
-    cout << "Nome do aluno: ";
-    cin.ignore();
-    getline(cin, h.nomeAluno);
-
-    cout << "ID da ficha: ";
-    cin >> h.idFicha;
-
-    cout << "Data: ";
-    cin.ignore();
-    getline(cin, h.data);
-
-    historico.push_back(h);
-    cout << "Treino registrado!\n";
-}
-
-void salvarArquivos() {
-    ofstream arqEx("exercicios.txt");
-    for (auto& c : listaCardio) c.salvar(arqEx);
-    for (auto& f : listaForca) f.salvar(arqEx);
-    arqEx.close();
-
-    ofstream arqFi("fichas.txt");
-    for (auto& f : listaFichas) f.salvar(arqFi);
-    arqFi.close();
-
-    ofstream arqHis("historico.txt");
-    for (auto& h : historico) h.salvar(arqHis);
-    arqHis.close();
-
-    cout << "Arquivos salvos!\n";
-}
-
-void listarExercicios() {
-    cout << "\n== CARDIO ==\n";
-    for (auto& c : listaCardio)
-        cout << c.getId() << " - " << c.getNome() << "\n";
-
-    cout << "\n== FORCA ==\n";
-    for (auto& f : listaForca)
-        cout << f.getId() << " - " << f.getNome() << "\n";
-}
-
-void listarFichas() {
-    for (auto& f : listaFichas) {
-        cout << f.idFicha << " - " << f.nome << " : ";
-        for (int id : f.idsExercicios) cout << id << " ";
-        cout << "\n";
-    }
-}
-
-void listarHistorico() {
-    for (auto& h : historico) {
-        cout << h.nomeAluno << " - Ficha " << h.idFicha
-             << " - " << h.data << "\n";
-    }
-}
-
-// =============================================================
-//                              MAIN
-// =============================================================
+// função principal
+// carrega arquivos, mostra menu e salva tudo ao sair
 int main() {
+    vector<Exercicio*> exercicios;
+    vector<Ficha> fichas;
+    int fichaProxId = 1;
+
+    // leitura do arquivo de exercícios na inicialização
+    // reconstrói todos os objetos cardio/força
+    ifstream arqEx("exercicios.txt");
+    if (arqEx.is_open()) {
+        string linha;
+        while (getline(arqEx, linha)) {
+            stringstream ss(linha);
+            vector<string> v;
+            string campo;
+
+            while (getline(ss, campo, ';')) v.push_back(campo);
+            int tipo = stoi(v[0]);
+
+            if (tipo == 1)
+                exercicios.push_back(new Cardio(stoi(v[1]), v[2], stoi(v[5]), stoi(v[3]), stod(v[4])));
+            else
+                exercicios.push_back(new Forca(stoi(v[1]), v[2], stoi(v[7]), stod(v[3]),
+                                               stoi(v[4]), stoi(v[5]), stoi(v[6])));
+        }
+    }
+
+    // leitura do arquivo de fichas
+    // reconstrói fichas e associa exercícios existentes
+    ifstream arqFi("fichas.txt");
+    if (arqFi.is_open()) {
+        string linha;
+        while (getline(arqFi, linha)) {
+
+            stringstream ss(linha);
+            vector<string> v;
+            string campo;
+
+            while (getline(ss, campo, ';')) v.push_back(campo);
+
+            int idFicha = stoi(v[0]);
+            string nomeFicha = v[1];
+            int qtd = stoi(v[2]);
+
+            Ficha f(idFicha, nomeFicha);
+
+            for (int i = 0; i < qtd; i++) {
+                int exId = stoi(v[3 + i]);
+
+                for (auto e : exercicios)
+                    if (e->getId() == exId)
+                        f.exercicios.push_back(e);
+            }
+
+            fichas.push_back(f);
+
+            if (idFicha >= fichaProxId)
+                fichaProxId = idFicha + 1;
+        }
+    }
+
+    // loop principal do menu
     int op;
-
     do {
-        cout << "\n===== MENU =====\n"
-             << "1 - Cadastrar exercicio\n"
-             << "2 - Criar ficha\n"
-             << "3 - Registrar treino\n"
-             << "4 - Listar exercicios\n"
-             << "5 - Listar fichas\n"
-             << "6 - Listar historico\n"
-             << "7 - Salvar tudo\n"
-             << "0 - Sair\n> ";
-
+        cout << "\n==== menu principal ====\n";
+        cout << "1 - gerenciar exercicios\n";
+        cout << "2 - gerenciar fichas\n";
+        cout << "3 - registrar treino\n";
+        cout << "4 - ver historico\n";
+        cout << "0 - sair\n";
         cin >> op;
 
-        switch (op) {
-            case 1: cadastrarExercicio(); break;
-            case 2: criarFicha(); break;
-            case 3: registrarTreino(); break;
-            case 4: listarExercicios(); break;
-            case 5: listarFichas(); break;
-            case 6: listarHistorico(); break;
-            case 7: salvarArquivos(); break;
+        // menu 1 - gerenciamento de exercícios
+        if (op == 1) {
+            int op2;
+            cout << "\n1 - cadastrar\n2 - listar\n3 - excluir\n";
+            cin >> op2;
+
+            // cadastrar novo exercício
+            if (op2 == 1) {
+                int tipo;
+                cout << "\n1-cardio  2-forca\n";
+                cin >> tipo;
+                cin.ignore();
+
+                string nome;
+                cout << "nome: ";
+                getline(cin, nome);
+
+                if (tipo == 1) {
+                    int d; double cpm;
+                    cout << "duracao: "; cin >> d;
+                    cout << "cal/min: "; cin >> cpm;
+                    exercicios.push_back(new Cardio(nome, d, cpm));
+                } else {
+                    double carga; int s, r, d;
+                    cout << "carga: "; cin >> carga;
+                    cout << "series: "; cin >> s;
+                    cout << "reps: "; cin >> r;
+                    cout << "descanso: "; cin >> d;
+                    exercicios.push_back(new Forca(nome, carga, s, r, d));
+                }
+            }
+
+            // listar exercícios ativos
+            if (op2 == 2) {
+                for (auto e : exercicios)
+                    if (e->isAtivo())
+                        e->exibirDetalhes();
+            }
+
+            // excluir lógico (não remove do vetor)
+            if (op2 == 3) {
+                int id; cout << "id: "; cin >> id;
+                for (auto e : exercicios)
+                    if (e->getId() == id)
+                        e->desativar();
+            }
+        }
+
+        // menu 2 - gerenciamento de fichas
+        else if (op == 2) {
+            int op2;
+            cout << "\n1 - criar ficha\n2 - adicionar exercicio\n3 - listar fichas\n";
+            cin >> op2;
+
+            // criar nova ficha
+            if (op2 == 1) {
+                cin.ignore();
+                string n;
+                cout << "nome da ficha: ";
+                getline(cin, n);
+                fichas.push_back(Ficha(fichaProxId++, n));
+            }
+
+            // adicionar exercício a uma ficha
+            if (op2 == 2) {
+                int idF, idE;
+                cout << "id da ficha: "; cin >> idF;
+                cout << "id do exercicio: "; cin >> idE;
+
+                Exercicio* escolhido = nullptr;
+                for (auto e : exercicios)
+                    if (e->getId() == idE && e->isAtivo())
+                        escolhido = e;
+
+                for (auto& f : fichas)
+                    if (f.id == idF && escolhido)
+                        f.exercicios.push_back(escolhido);
+            }
+
+            // listar fichas completas
+            if (op2 == 3) {
+                for (auto& f : fichas) {
+                    cout << "\nficha " << f.id << " - " << f.nome << endl;
+                    for (auto e : f.exercicios)
+                        e->exibirDetalhes();
+
+                    cout << "tempo total = " << f.tempoTotal() << endl;
+                    cout << "cal total = " << f.caloriasTotal() << endl;
+                }
+            }
+        }
+
+        // menu 3 - registrar execução de ficha
+        // salva no historico.txt
+        else if (op == 3) {
+            int id;
+            cout << "id da ficha: ";
+            cin >> id;
+
+            for (auto& f : fichas) {
+                if (f.id == id) {
+                    ofstream h("historico.txt", ios::app);
+                    h << agora() << ";" << f.id << ";" << f.nome << ";"
+                      << f.tempoTotal() << ";" << f.caloriasTotal() << "\n";
+                    cout << "registrado!\n";
+                }
+            }
+        }
+
+        // menu 4 - exibe histórico de treinos
+        else if (op == 4) {
+            ifstream h("historico.txt");
+            string linha;
+            while (getline(h, linha))
+                cout << linha << endl;
         }
 
     } while (op != 0);
+
+    // ao sair, salva exercícios e fichas nos arquivos
+    ofstream outE("exercicios.txt");
+    for (auto e : exercicios)
+        outE << e->serializar() << "\n";
+
+    ofstream outF("fichas.txt");
+    for (auto& f : fichas)
+        outF << f.serializar() << "\n";
 
     return 0;
 }
